@@ -22,9 +22,9 @@ pipeline {
           }
         }
 
-        stage('Build Dev') {
+        stage('Build') {
           steps {
-            build()
+            buildDocker()
           }
         }
       }
@@ -54,7 +54,7 @@ def setup() {
   echo 'install dependencies'
 }
 
-def build() {
+def buildDocker() {
   echo "build"
   themeConfig.each { key, val ->
     echo "stash: $key, value ${val['dev']} start"
