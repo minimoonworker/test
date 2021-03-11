@@ -1,0 +1,166 @@
+pipeline {
+  agent any
+  environment {
+    CI = 'true'
+    HOME = '.'
+    BRANCH_NAME = "${env.gitlabSourceBranch}"
+  }
+  stages {
+    stage('Test and Build') {
+      agent {
+        docker {
+          image 'node:12.4'
+          reuseNode true
+        }
+      }
+      stages {
+        stage('Setup') {
+          steps {
+            echo "gitlab source branch name: ${env.gitlabSourceBranch}"
+            echo "branch name: ${env.BRANCH_NAME}"
+            setup()
+            script {
+              NPM_VERSION = sh(script: 'npm run version --silent', returnStdout: true).trim()
+            }
+          }
+        }
+
+        stage('Build Dev') {
+          environment {
+            APP_VERSION = "${NPM_VERSION}-b${env.BUILD_ID}"
+          }
+          when {
+            branch 'develop'
+          }
+          steps {
+            build('dev')
+          }
+        }
+
+        stage('Build Beta') {
+          environment {
+            APP_VERSION = sh(returnStdout: true, script: "git describe --tags").trim()
+          }
+          when {
+            expression {
+              return isBetaTag(readCurrentTag())
+            }
+          }
+          steps {
+            build('beta')
+          }
+        }
+
+        stage('Build Production') {
+          environment {
+            APP_VERSION = sh(returnStdout: true, script: "git describe --tags").trim()
+          }
+          when {
+            expression {
+              return isProductionTag(readCurrentTag())
+            }
+          }
+          steps {
+            build('live')
+          }
+        }
+      }
+    }
+    
+    stage('Deploy Dev') {
+      environment {
+        APP_VERSION = "${NPM_VERSION}-b${env.BUILD_ID}"
+      }
+      when {
+        branch 'develop'
+      }
+      steps {
+        dockerify('dev')
+        deploy('dev', 'tenmax-tpe-dsp-dev.tenmax:2375', 'pmax-dev.tenmax.io,dev-kang2.adnetworkdigital.com,dev-tsp2.adnetworkdigital.com', '')
+      }
+    }
+
+    stage('Deploy Beta') {
+      environment {
+        APP_VERSION = sh(returnStdout: true, script: "git describe --tags").trim()
+      }
+      when {
+        expression {
+          return isBetaTag(readCurrentTag())
+        }
+      }
+      steps {
+        dockerify('beta')
+        deploy('beta', 'tenmax-sg-dsp-web-stage5.tenmax:2375', 'beta-pmax2.tenmax.io,beta-kang2.adnetworkdigital.com,beta-tsp2.adnetworkdigital.com', '')
+      }
+    }
+
+    stage('Deploy Production') {
+      environment {
+        APP_VERSION = sh(returnStdout: true, script: "git describe --tags").trim()
+      }
+      when {
+        expression {
+          return isProductionTag(readCurrentTag())
+        }
+      }
+      steps {
+        dockerify('live')
+        deploy('live', 'tenmax-sg-dsp-web-prod1.tenmax:2375', 'pmax2.tenmax.io,kang2.adnetworkdigital.com,tsp2.adnetworkdigital.com', '')
+      }
+    }
+  }
+}
+
+def setup() {
+  echo 'install dependencies'
+}
+
+def build(target) {
+  echo "build with ${target} environment"
+  // stash includes: 'build/**/*', name: "distribution-${target}"
+}
+
+def dockerify(target) {
+  echo "dockerify with ${target} environment"
+    // unstash "distribution-${target}"
+}
+
+def deploy(target, server, virtualHost, tlsOption = '--tlsverify=false') {
+  echo "dockerify with ${target} environment"
+  // def image = "docker.tenmax.io/pmax/tenmax-pmax2-web-${target}:${env.APP_VERSION}"
+  // sh "docker -H ${server} ${tlsOption} pull ${image}"
+  // sh "docker -H ${server} ${tlsOption} stop pmax2-web || echo 'old container stopped'"
+  // sh "docker -H ${server} ${tlsOption} rm pmax2-web || echo 'old container removed'"
+  // sh "docker -H ${server} ${tlsOption} run -d --privileged -p 8081:80 -e VIRTUAL_HOST=${virtualHost} -e VIRTUAL_PORT=8081 --name pmax2-web ${image}"
+}
+
+def boolean isBetaTag(String tag) {
+    echo "checking version tag $tag"
+    echo "this branch is $env.BRANCH_NAME"
+
+    if (tag == null) {
+        return false
+    }
+
+    def tagMatcher = tag =~ /\d+\.\d+\.\d+-beta\.\d+/
+    return tagMatcher.matches()
+}
+
+def boolean isProductionTag(String tag) {
+    echo "checking version tag $tag"
+    echo "this branch is $env.BRANCH_NAME"
+
+    if (tag == null) {
+        return false
+    }
+
+    def tagMatcher = tag =~ /\d+\.\d+\.\d+/
+    return tagMatcher.matches()
+}
+
+// workaround https://issues.jenkins-ci.org/browse/JENKINS-55987
+def String readCurrentTag() {
+    echo "jenkins tag is $env.TAG_NAME"
+    return sh(returnStdout: true, script: "git describe --tags || echo null").trim()           
+}
