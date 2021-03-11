@@ -23,141 +23,52 @@ pipeline {
         }
 
         stage('Build Dev') {
-          when {
-            branch 'develop'
-          }
           steps {
-            build('dev')
-          }
-        }
-
-        stage('Build Beta') {
-          when {
-            expression {
-              return isBetaTag(readCurrentTag())
-            }
-          }
-          steps {
-            build('beta')
-          }
-        }
-
-        stage('Build Production') {
-          when {
-            expression {
-              return isProductionTag(readCurrentTag())
-            }
-          }
-          steps {
-            build('live')
+            build()
           }
         }
       }
     }
-    
-    stage('Deploy Dev') {
-      when {
-        branch 'develop'
-      }
-      steps {
-        dockerify('dev')
-        deploy('dev', 'tenmax-tpe-dsp-dev.tenmax:2375', 'pmax-dev.tenmax.io,dev-kang2.adnetworkdigital.com,dev-tsp2.adnetworkdigital.com', '')
-      }
-    }
 
-    stage('Deploy Beta') {
-      environment {
-        APP_VERSION = sh(returnStdout: true, script: "git describe --tags").trim()
-      }
-      when {
-        expression {
-          return isBetaTag(readCurrentTag())
-        }
-      }
+    stage('Deploy') {
       steps {
-        dockerify('beta')
-        deploy('beta', 'tenmax-sg-dsp-web-stage5.tenmax:2375', 'beta-pmax2.tenmax.io,beta-kang2.adnetworkdigital.com,beta-tsp2.adnetworkdigital.com', '')
-      }
-    }
-
-    stage('Deploy Production') {
-      environment {
-        APP_VERSION = sh(returnStdout: true, script: "git describe --tags").trim()
-      }
-      when {
-        expression {
-          return isProductionTag(readCurrentTag())
-        }
-      }
-      steps {
-        dockerify('live')
-        deploy('live', 'tenmax-sg-dsp-web-prod1.tenmax:2375', 'pmax2.tenmax.io,kang2.adnetworkdigital.com,tsp2.adnetworkdigital.com', '')
+        dockerify()
       }
     }
   }
 }
 
-def map = [
+themeConfig = [
   'default': [
     'dev': 'pmax-dev.tenmax.io'
   ],
   'kang': [
     'dev': 'dev-kang2.adnetworkdigital.com'
+  ],
+  'tsp': [
+    'dev': 'dev-tsp2.adnetworkdigital.com'
   ]
 ]
 
 def setup() {
   echo 'install dependencies'
-  map.each { key, val ->
-    echo "theme: $key = value ${val['dev']}"
+}
+
+def build() {
+  echo "build"
+  themeConfig.each { key, val ->
+    echo "stash: $key, value ${val['dev']} start"
+    sh "cp custom/$key/test.json public/test.json"
+    stash includes: 'public/*', name: "distribution-$key"
+    echo "stash: $key, value ${val['dev']} end"
   }
 }
 
-def build(target) {
-  echo "build with ${target} environment"
-  // stash includes: 'build/**/*', name: "distribution-${target}"
-}
-
-def dockerify(target) {
-  echo "dockerify with ${target} environment"
-    // unstash "distribution-${target}"
-}
-
-def deploy(target, server, virtualHost, tlsOption = '--tlsverify=false') {
-  echo "dockerify with ${target} environment"
-  // def image = "docker.tenmax.io/pmax/tenmax-pmax2-web-${target}:${env.APP_VERSION}"
-  // sh "docker -H ${server} ${tlsOption} pull ${image}"
-  // sh "docker -H ${server} ${tlsOption} stop pmax2-web || echo 'old container stopped'"
-  // sh "docker -H ${server} ${tlsOption} rm pmax2-web || echo 'old container removed'"
-  // sh "docker -H ${server} ${tlsOption} run -d --privileged -p 8081:80 -e VIRTUAL_HOST=${virtualHost} -e VIRTUAL_PORT=8081 --name pmax2-web ${image}"
-}
-
-def boolean isBetaTag(String tag) {
-    echo "checking version tag $tag"
-    echo "this branch is $env.BRANCH_NAME"
-
-    if (tag == null) {
-        return false
-    }
-
-    def tagMatcher = tag =~ /\d+\.\d+\.\d+-beta\.\d+/
-    return tagMatcher.matches()
-}
-
-def boolean isProductionTag(String tag) {
-    echo "checking version tag $tag"
-    echo "this branch is $env.BRANCH_NAME"
-
-    if (tag == null) {
-        return false
-    }
-
-    def tagMatcher = tag =~ /\d+\.\d+\.\d+/
-    return tagMatcher.matches()
-}
-
-// workaround https://issues.jenkins-ci.org/browse/JENKINS-55987
-def String readCurrentTag() {
-    echo "jenkins tag is $env.TAG_NAME"
-    return sh(returnStdout: true, script: "git describe --tags || echo null").trim()           
+def dockerify() {
+  echo "dockerify"
+  themeConfig.each { key, val ->
+    unstash "distribution-$key"
+    echo 'check the public json with correct server URL'
+    sh 'grep -r -o ":.*.tenmax.io" public/test.json'
+  }
 }
