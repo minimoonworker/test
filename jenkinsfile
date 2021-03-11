@@ -19,16 +19,10 @@ pipeline {
             echo "gitlab source branch name: ${env.gitlabSourceBranch}"
             echo "branch name: ${env.BRANCH_NAME}"
             setup()
-            script {
-              NPM_VERSION = sh(script: 'npm run version --silent', returnStdout: true).trim()
-            }
           }
         }
 
         stage('Build Dev') {
-          environment {
-            APP_VERSION = "${NPM_VERSION}-b${env.BUILD_ID}"
-          }
           when {
             branch 'develop'
           }
@@ -38,9 +32,6 @@ pipeline {
         }
 
         stage('Build Beta') {
-          environment {
-            APP_VERSION = sh(returnStdout: true, script: "git describe --tags").trim()
-          }
           when {
             expression {
               return isBetaTag(readCurrentTag())
@@ -52,9 +43,6 @@ pipeline {
         }
 
         stage('Build Production') {
-          environment {
-            APP_VERSION = sh(returnStdout: true, script: "git describe --tags").trim()
-          }
           when {
             expression {
               return isProductionTag(readCurrentTag())
@@ -68,9 +56,6 @@ pipeline {
     }
     
     stage('Deploy Dev') {
-      environment {
-        APP_VERSION = "${NPM_VERSION}-b${env.BUILD_ID}"
-      }
       when {
         branch 'develop'
       }
