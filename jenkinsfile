@@ -97,12 +97,24 @@ pipeline {
   }
 }
 
+def map = [
+  'default': [
+    'dev': 'pmax-dev.tenmax.io'
+  ],
+  'kang': [
+    'dev': 'dev-kang2.adnetworkdigital.com'
+  ]
+]
+
 def setup() {
   echo 'install dependencies'
 }
 
 def build(target) {
   echo "build with ${target} environment"
+  map.each { key, val ->
+    echo "theme: $key = value ${val['dev']}"
+  }
   // stash includes: 'build/**/*', name: "distribution-${target}"
 }
 
