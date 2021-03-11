@@ -108,13 +108,13 @@ def map = [
 
 def setup() {
   echo 'install dependencies'
+  map.each { key, val ->
+    echo "theme: $key = value ${val['dev']}"
+  }
 }
 
 def build(target) {
   echo "build with ${target} environment"
-  map.each { key, val ->
-    echo "theme: $key = value ${val['dev']}"
-  }
   // stash includes: 'build/**/*', name: "distribution-${target}"
 }
 
